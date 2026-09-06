@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+set +e
+set -uo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: waylandcraft-diagnose [--logs]
+
+Print a read-only report covering the display manager, VT, graphics devices,
+session environment, runtime commands, and Waylandcraft user units.
+Add --logs to include recent display-manager, Minecraft, and coredump records.
+EOF
+}
+
+include_logs=0
+case ${1:-} in
+  '') ;;
+  --logs) include_logs=1 ;;
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+[[ $# -le 1 ]] || { usage >&2; exit 2; }
+
+section() {
+  printf '\n== %s ==\n' "$1"
+}
+
+field() {
+  printf '%-24s %s\n' "$1:" "${2:-<unset>}"
+}
+
+resolved_command() {
+  local name=$1
+  local executable
+  executable=$(command -v "$name" 2>/dev/null)
+  if [[ -n $executable ]]; then
+    field "$name" "$(readlink -f -- "$executable" 2>/dev/null || printf '%s' "$executable")"
+  else
+    field "$name" '<not found>'
+  fi
+}
+
+section 'Build'
+field 'Pinned components' "${WAYLANDCRAFT_BUILD_INFO:-unknown}"
+field 'Current system' "$(readlink -f -- /run/current-system 2>/dev/null)"
+field 'Kernel' "$(uname -r 2>/dev/null)"
+
+section 'Login and session'
+current_tty=$(tty 2>/dev/null)
+active_tty=$(tr -d '\n' < /sys/class/tty/tty0/active 2>/dev/null)
+field 'User' "${USER:-unknown} (uid $(id -u 2>/dev/null))"
+field 'Current TTY' "$current_tty"
+field 'Active TTY' "$active_tty"
+field 'XDG_SESSION_ID' "${XDG_SESSION_ID:-}"
+field 'XDG_SESSION_TYPE' "${XDG_SESSION_TYPE:-}"
+field 'XDG_CURRENT_DESKTOP' "${XDG_CURRENT_DESKTOP:-}"
+field 'XDG_RUNTIME_DIR' "${XDG_RUNTIME_DIR:-}"
+field 'WAYLAND_DISPLAY' "${WAYLAND_DISPLAY:-}"
+field 'DISPLAY' "${DISPLAY:-}"
+field 'XKB_DEFAULT_OPTIONS' "${XKB_DEFAULT_OPTIONS:-}"
+
+if [[ -n ${XDG_SESSION_ID:-} ]]; then
+  loginctl show-session "$XDG_SESSION_ID" \
+    --property=Active --property=Class --property=Remote \
+    --property=Seat --property=State --property=Type --property=VTNr 2>&1
+fi
+
+section 'Display manager'
+field 'Unit target' "$(readlink -f -- /etc/systemd/system/display-manager.service 2>/dev/null)"
+systemctl show display-manager.service \
+  --property=LoadState --property=ActiveState --property=SubState \
+  --property=Result --property=MainPID 2>&1
+
+section 'Graphics'
+field '/run/opengl-driver' "$(readlink -f -- /run/opengl-driver 2>/dev/null)"
+field '/run/opengl-driver-32' "$(readlink -f -- /run/opengl-driver-32 2>/dev/null)"
+shopt -s nullglob
+connector_status=(/sys/class/drm/card*-*/status)
+if ((${#connector_status[@]})); then
+  for status_file in "${connector_status[@]}"; do
+    field "${status_file%/status}" "$(tr -d '\n' < "$status_file" 2>/dev/null)"
+  done
+else
+  printf 'No DRM connector status files found.\n'
+fi
+
+section 'Runtime commands'
+for command_name in waylandcraft waylandcraft-client-probe waylandcraft-terminal \
+  cage xwayland-satellite portablemc java; do
+  resolved_command "$command_name"
+done
+
+section 'Waylandcraft user units'
+if systemctl --user show-environment >/dev/null 2>&1; then
+  systemctl --user show waylandcraft-session.target waylandcraft-minecraft.service \
+    --property=Id --property=LoadState --property=ActiveState --property=SubState \
+    --property=Result --property=MainPID --property=NRestarts 2>&1
+  printf '\nImported display environment:\n'
+  systemctl --user show-environment \
+    | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XDG_CURRENT_DESKTOP|XDG_RUNTIME_DIR|XDG_SESSION_DESKTOP|XDG_SESSION_TYPE)=' \
+    || true
+else
+  printf 'The user systemd manager is unavailable from this context.\n'
+fi
+
+section 'Writable runtime'
+if [[ -n ${XDG_RUNTIME_DIR:-} && -d ${XDG_RUNTIME_DIR:-} ]]; then
+  find "$XDG_RUNTIME_DIR" -maxdepth 1 -type d -name 'waylandcraft*' -printf '%M %u:%g %p\n'
+else
+  printf 'XDG_RUNTIME_DIR is unavailable.\n'
+fi
+
+if ((include_logs)); then
+  section 'Recent Minecraft journal'
+  journalctl --user --no-pager -n 100 -u waylandcraft-minecraft.service 2>&1
+
+  section 'Recent display-manager journal'
+  journalctl --no-pager -n 100 -u display-manager.service 2>&1
+
+  section 'Recent coredumps'
+  coredumpctl --no-pager --no-legend list 2>&1 | tail -20
+fi
+
+printf '\nReport complete. No system state was changed.\n'

@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a reproducible problem with the module or session
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is a spare-time hobby project, so reports may not receive a response or fix. Do not include secrets. Review diagnostic output before posting it because it contains usernames and Nix store paths.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Enable ...
+        2. Start ...
+        3. Press ...
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Waylandcraft Desktop revision
+      description: Provide the locked Git revision or `rev` from the consuming flake lock.
+    validations:
+      required: true
+  - type: textarea
+    id: system
+    attributes:
+      label: System details
+      description: Include the NixOS closure, GPU and driver, monitor, and exact launch command and context.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste relevant, reviewed output from `waylandcraft-diagnose --logs` and the journal.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I reviewed the attached output and removed secrets or other sensitive information.
+          required: true

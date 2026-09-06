@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Flake checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+      - name: Check formatting
+        run: git ls-files -z -co --exclude-standard '*.nix' | xargs -0 nix fmt -- --check
+      - name: Check whitespace
+        run: git diff --check "$(git hash-object -t tree /dev/null)" HEAD
+      - name: Run flake checks
+        run: nix flake check --no-update-lock-file --print-build-logs
+
+  supervision-vm:
+    name: Supervision VM
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+      - name: Build and run integration VM
+        run: nix build .#supervision-vm --no-update-lock-file --print-build-logs

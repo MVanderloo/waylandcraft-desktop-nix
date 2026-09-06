@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  printf '%s\n' \
+    'Usage: runtime-prepare TEMPLATE RUNTIME-DIRECTORY [PERSISTENT-DIRECTORY [GAME-PATH...]]'
+}
+
+die() {
+  printf 'runtime-prepare: %s\n' "$*" >&2
+  exit 1
+}
+
+[[ $# -ge 2 ]] || { usage >&2; exit 2; }
+template=$1
+runtime_input=$2
+shift 2
+
+persistent_input=
+persistent_paths=()
+if (($# > 0)); then
+  persistent_input=$1
+  shift
+  [[ $persistent_input = /* ]] || die 'persistent directory must be absolute'
+  [[ ! -L $persistent_input ]] || die 'persistent directory must not be a symbolic link'
+
+  for relative_path in "$@"; do
+    [[ -n $relative_path ]] || die 'persistent game paths must not be empty'
+    [[ $relative_path != /* ]] || die "persistent game path must be relative: $relative_path"
+    [[ ! $relative_path =~ [[:cntrl:]] ]] \
+      || die 'persistent game paths must not contain control characters'
+    case "/$relative_path/" in
+      */./*|*/../*|*//*)
+        die "persistent game path must be normalized: $relative_path"
+        ;;
+    esac
+    case "$relative_path" in
+      mods|mods/*|waylandcraft|waylandcraft/desktop-policy.json|waylandcraft/desktop-policy.json/*)
+        die "persistent game path must not replace managed runtime content: $relative_path"
+        ;;
+    esac
+    for existing_path in "${persistent_paths[@]}"; do
+      if [[ $relative_path == "$existing_path" \
+        || $relative_path == "$existing_path/"* \
+        || $existing_path == "$relative_path/"* ]]; then
+        die "persistent game paths must be unique and non-overlapping: $relative_path"
+      fi
+    done
+    persistent_paths+=("$relative_path")
+  done
+fi
+
+[[ -d $template/game ]] || die "template has no game directory: $template"
+[[ -d $template/main ]] || die "template has no main directory: $template"
+[[ $runtime_input = /* ]] || die 'runtime directory must be absolute'
+[[ ! -L $runtime_input ]] || die 'runtime directory must not be a symbolic link'
+
+runtime=$(readlink -m -- "$runtime_input")
+runtime_parent=$(dirname -- "$runtime")
+runtime_name=$(basename -- "$runtime")
+[[ $runtime != / ]] || die 'runtime directory must not be the filesystem root'
+
+if [[ -n $persistent_input ]]; then
+  persistent=$(readlink -m -- "$persistent_input")
+  [[ $persistent != / ]] || die 'persistent directory must not be the filesystem root'
+  if [[ $persistent == "$runtime" \
+    || $persistent == "$runtime/"* \
+    || $runtime == "$persistent/"* ]]; then
+    die 'runtime and persistent directories must not contain one another'
+  fi
+fi
+
+if [[ ${WAYLANDCRAFT_ALLOW_TEST_DEST:-0} != 1 ]]; then
+  [[ -n ${XDG_RUNTIME_DIR:-} ]] || die 'XDG_RUNTIME_DIR is not set'
+  [[ -d $XDG_RUNTIME_DIR ]] || die "XDG_RUNTIME_DIR is not a directory: $XDG_RUNTIME_DIR"
+  [[ -O $XDG_RUNTIME_DIR && -w $XDG_RUNTIME_DIR ]] \
+    || die 'XDG_RUNTIME_DIR must be owned by the current user and writable'
+  runtime_root=$(readlink -f -- "$XDG_RUNTIME_DIR")
+  [[ $runtime_parent == "$runtime_root" ]] \
+    || die 'refusing to replace a directory outside XDG_RUNTIME_DIR'
+  [[ $runtime_name =~ ^waylandcraft(-[A-Za-z0-9_-]+)?$ ]] \
+    || die 'refusing a runtime name outside the Waylandcraft runtime area'
+fi
+
+mkdir -p "$runtime_parent"
+next=$(mktemp -d "$runtime_parent/.${runtime_name}.next.XXXXXX")
+rollback=$(mktemp -d "$runtime_parent/.${runtime_name}.rollback.XXXXXX")
+previous_moved=0
+
+cleanup() {
+  if [[ -d ${next:-} ]]; then
+    # A failed copy may leave store-derived read-only directories behind.
+    # Make the partial tree removable before cleaning it up.
+    chmod -R u+rwX "$next" 2>/dev/null || true
+    rm -rf -- "$next"
+  fi
+  if [[ ${previous_moved:-0} == 1 && -e ${rollback:-}/previous ]]; then
+    if [[ ! -e $runtime && ! -L $runtime ]]; then
+      mv -T -- "$rollback/previous" "$runtime" \
+        || printf 'runtime-prepare: failed to restore previous runtime from %s\n' "$rollback/previous" >&2
+    else
+      printf 'runtime-prepare: preserving previous runtime at %s\n' "$rollback/previous" >&2
+    fi
+  fi
+  if [[ -d ${rollback:-} && ! -e ${rollback:-}/previous ]]; then
+    rm -rf -- "$rollback"
+  fi
+}
+trap cleanup EXIT INT TERM
+
+cp -a --reflink=auto "$template/." "$next/"
+chmod -R u+rwX "$next"
+
+if [[ -n $persistent_input ]]; then
+  mkdir -p "$persistent"
+
+  for relative_path in "${persistent_paths[@]}"; do
+    template_path="$next/game/$relative_path"
+    persistent_path="$persistent/$relative_path"
+
+    if [[ ! -e $persistent_path && ! -L $persistent_path ]]; then
+      mkdir -p "$(dirname -- "$persistent_path")"
+      if [[ -d $template_path && ! -L $template_path ]]; then
+        cp -a --reflink=auto "$template_path" "$persistent_path"
+      elif [[ -f $template_path && ! -L $template_path ]]; then
+        cp -a --reflink=auto "$template_path" "$persistent_path"
+      elif [[ -e $template_path || -L $template_path ]]; then
+        die "persistent game path has an unsupported template entry: $relative_path"
+      else
+        mkdir -p "$persistent_path"
+      fi
+    elif [[ -d $template_path && ! -L $template_path && ! -d $persistent_path ]]; then
+      die "persistent game path changed from a directory: $relative_path"
+    elif [[ -f $template_path && ! -L $template_path && ! -f $persistent_path ]]; then
+      die "persistent game path changed from a file: $relative_path"
+    fi
+
+    rm -rf -- "$template_path"
+    mkdir -p "$(dirname -- "$template_path")"
+    ln -s "$persistent_path" "$template_path"
+  done
+fi
+
+if [[ -e $runtime || -L $runtime ]]; then
+  mv -T -- "$runtime" "$rollback/previous"
+  previous_moved=1
+fi
+
+if ! mv -T -- "$next" "$runtime"; then
+  if [[ $previous_moved == 1 ]]; then
+    mv -T -- "$rollback/previous" "$runtime" \
+      || die "could not install the new runtime tree or restore $rollback/previous"
+    previous_moved=0
+  fi
+  die 'could not install the new runtime tree'
+fi
+next=
+rm -rf -- "$rollback"
+rollback=
+previous_moved=0
+trap - EXIT INT TERM
+
+printf 'Prepared fresh Waylandcraft runtime at %s\n' "$runtime"

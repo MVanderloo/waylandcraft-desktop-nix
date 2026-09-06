@@ -1,0 +1,23 @@
+# Third-party software
+
+The MIT License covers the original source in this repository. It does not
+relicense software or content fetched by Nix, including:
+
+- [Minecraft](https://www.minecraft.net/en-us/usage-guidelines) from Mojang
+  Studios;
+- [Waylandcraft](https://github.com/EVV1E/waylandcraft);
+- [Fabric Loader](https://github.com/FabricMC/fabric-loader) and
+  [Fabric API](https://github.com/FabricMC/fabric-api);
+- [Sodium](https://github.com/CaffeineMC/sodium), whose pinned artifact
+  declares the PolyForm Shield 1.0 license;
+- [PortableMC](https://github.com/theorzr/portablemc);
+- [Cage](https://github.com/cage-kiosk/cage),
+  [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite), and
+  their graphics-stack dependencies.
+
+Pinned revisions, direct artifact hashes, and the aggregate Minecraft cache
+hash are recorded in `flake.lock`, `nix/pins.nix`, and
+`nix/minecraft-home.nix`. Consult each upstream project for its license and
+notices. The repository's MIT license alone does not authorize distribution of
+the resulting binary closure; review the Minecraft usage guidelines and every
+upstream license first.
