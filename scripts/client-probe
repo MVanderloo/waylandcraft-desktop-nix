@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: waylandcraft-client-probe native|x11
+
+Open a small terminal through Waylandcraft and request typed confirmation.
+The native probe checks WAYLAND_DISPLAY; the X11 probe checks DISPLAY and the
+xwayland-satellite path.
+EOF
+}
+
+die() {
+  printf 'waylandcraft-client-probe: %s\n' "$*" >&2
+  exit 1
+}
+
+complete_probe() {
+  local kind=$1
+  local expected=$2
+  local display
+  local answer
+
+  case $kind in
+    native)
+      [[ -n ${WAYLAND_DISPLAY:-} ]] || die 'native probe has no WAYLAND_DISPLAY'
+      display="WAYLAND_DISPLAY=$WAYLAND_DISPLAY"
+      ;;
+    x11)
+      [[ -n ${DISPLAY:-} ]] || die 'X11 probe has no DISPLAY'
+      display="DISPLAY=$DISPLAY"
+      ;;
+    *)
+      die "unknown probe kind: $kind"
+      ;;
+  esac
+
+  printf '\nWaylandcraft %s client probe\n' "$kind"
+  printf 'Connection: %s\n\n' "$display"
+  printf 'If this window rendered correctly, type %s and press Enter: ' "$expected"
+  IFS= read -r answer
+
+  [[ $answer == "$expected" ]] || die 'typed input did not match'
+  printf '\nPASS: %s rendering and keyboard input work.\n' "$kind"
+  sleep 2
+}
+
+self=$(readlink -f -- "$0")
+
+case ${1:-} in
+  native)
+    [[ -n ${WAYLAND_DISPLAY:-} ]] \
+      || die 'WAYLAND_DISPLAY is empty; invoke this inside the Waylandcraft session'
+    client=${WAYLANDCRAFT_NATIVE_CLIENT:-foot}
+    command -v "$client" >/dev/null || die "native client '$client' is not installed"
+    exec "$client" --title=waylandcraft-native-probe "$self" __complete native WAYLAND_OK
+    ;;
+  x11)
+    [[ -n ${DISPLAY:-} ]] \
+      || die 'DISPLAY is empty; xwayland-satellite is unavailable to this client'
+    client=${WAYLANDCRAFT_X11_CLIENT:-xterm}
+    command -v "$client" >/dev/null || die "X11 client '$client' is not installed"
+    exec "$client" -T waylandcraft-x11-probe -e "$self" __complete x11 X11_OK
+    ;;
+  __complete)
+    [[ $# -eq 3 ]] || die 'invalid internal probe invocation'
+    complete_probe "$2" "$3"
+    ;;
+  -h|--help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

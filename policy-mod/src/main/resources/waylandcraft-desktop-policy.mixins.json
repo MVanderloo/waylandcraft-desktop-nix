@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "dev.waylandcraft.desktop.mixin",
+  "plugin": "dev.waylandcraft.desktop.DesktopPolicyMixinPlugin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "GlobalShortcutKeyMixin",
+    "KeyboardLockKeyMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+die() {
+  printf 'tty-cage-smoke: %s\n' "$*" >&2
+  exit 1
+}
+
+case ${1:-} in
+  -h|--help)
+    cat <<'EOF'
+Usage: scripts/tty-cage-smoke
+
+Run from a direct local Linux virtual-terminal login, not from tmux, SSH,
+mosh, or a graphical terminal. Starts the flake's pinned Cage and native
+client probe, then returns to the invoking TTY when the probe exits.
+EOF
+    exit 0
+    ;;
+  '') ;;
+  *) die 'this command takes no arguments' ;;
+esac
+
+command -v nix >/dev/null || die 'nix is not installed'
+
+current_tty=$(tty 2>/dev/null || true)
+[[ $current_tty =~ ^/dev/tty[0-9]+$ ]] \
+  || die "run this from a direct VT shell, not ${current_tty:-a non-TTY session}; detach from tmux first"
+
+active_tty=$(cat /sys/class/tty/tty0/active 2>/dev/null || true)
+[[ /dev/$active_tty == "$current_tty" ]] \
+  || die "$current_tty is not the active VT (the kernel reports ${active_tty:-unknown})"
+
+runtime_dir=/run/user/$(id -u)
+[[ -d $runtime_dir && -O $runtime_dir && -w $runtime_dir ]] \
+  || die "$runtime_dir must exist, be owned by this user, and be writable"
+export XDG_RUNTIME_DIR=$runtime_dir
+
+connected_output=
+for status_file in /sys/class/drm/card*-*/status; do
+  [[ -f $status_file ]] || continue
+  if grep -qx connected "$status_file"; then
+    connected_output=${status_file%/status}
+    connected_output=${connected_output##*/}
+    break
+  fi
+done
+[[ -n $connected_output ]] || die 'DRM reports no connected monitor'
+
+[[ -d /run/opengl-driver ]] \
+  || die 'NixOS hardware graphics are not active; enable hardware.graphics or rebuild with the Waylandcraft module first'
+[[ -d /run/opengl-driver/share/glvnd/egl_vendor.d ]] \
+  || die '/run/opengl-driver has no EGL vendor configuration'
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+repository=$(dirname "$script_dir")
+
+cat <<EOF
+Starting pinned Cage on $current_tty using $connected_output.
+
+In the probe window:
+  1. Test Ctrl+Alt+F2, then return with Ctrl+Alt+F1.
+  2. Type WAYLAND_OK and press Enter.
+
+EOF
+
+cd "$repository"
+exec nix shell --no-update-lock-file "path:$repository#runtime-tools" -c \
+  cage -s -d -- waylandcraft-client-probe native

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "waylandcraft_desktop_policy",
+  "version": "${version}",
+  "name": "Waylandcraft Desktop Policy",
+  "description": "Desktop-session policy and global shortcuts for Waylandcraft",
+  "authors": [
+    "Michael van der Loo"
+  ],
+  "contact": {
+    "homepage": "https://github.com/mvanderloo/waylandcraft-desktop-nix",
+    "sources": "https://github.com/mvanderloo/waylandcraft-desktop-nix",
+    "issues": "https://github.com/mvanderloo/waylandcraft-desktop-nix/issues"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "dev.waylandcraft.desktop.DesktopPolicy"
+    ]
+  },
+  "mixins": [
+    "waylandcraft-desktop-policy.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": "=${loader_version}",
+    "fabric-api": "=${fabric_version}",
+    "minecraft": "=${minecraft_version}",
+    "java": ">=25",
+    "waylandcraft": "=${waylandcraft_version}"
+  }
+}

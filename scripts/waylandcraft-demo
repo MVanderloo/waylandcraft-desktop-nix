@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+die() {
+  printf 'waylandcraft-demo: %s\n' "$*" >&2
+  exit 1
+}
+
+if [[ ${1:-} == __client ]]; then
+  (($# == 2)) || die 'invalid internal invocation'
+  demo_root=$2
+
+  export XDG_SESSION_TYPE=wayland
+  export XDG_CURRENT_DESKTOP=Waylandcraft
+  export XDG_SESSION_DESKTOP=waylandcraft-demo
+  export _JAVA_AWT_WM_NONREPARENTING=1
+
+  launch_arguments=(
+    --main-dir "$demo_root/main"
+    --output machine
+    start
+    --mc-dir "$demo_root/game"
+    --bin-dir "$demo_root/bin"
+    --fetch-exclude-all
+    --jvm "$WAYLANDCRAFT_JAVA"
+    --username "$WAYLANDCRAFT_DEMO_USERNAME"
+    --uuid "$WAYLANDCRAFT_DEMO_UUID"
+    --disable-multiplayer
+    "--jvm-arg=-Xms1G,-Xmx4G"
+  )
+  launch_arguments+=("$WAYLANDCRAFT_FABRIC_VERSION")
+
+  exec portablemc "${launch_arguments[@]}"
+fi
+
+case ${1:-} in
+  -h|--help)
+    cat <<'EOF'
+Usage: nix run github:mvanderloo/waylandcraft-desktop-nix
+
+Run from a direct local Linux virtual-terminal login, not from tmux, SSH,
+mosh, or a graphical terminal. Starts the pinned Minecraft/Fabric/Waylandcraft
+instance inside Cage without changing the host configuration or requiring a
+bundled world.
+
+The persistent test instance uses your local username and starts at Minecraft's
+normal menu. Create or select whichever single-player world you want to use.
+Data is stored at ${XDG_DATA_HOME:-$HOME/.local/share}/waylandcraft-demo.
+EOF
+    exit 0
+    ;;
+  '') ;;
+  *) die 'this command takes no arguments' ;;
+esac
+
+current_tty=$(tty 2>/dev/null || true)
+[[ $current_tty =~ ^/dev/tty[0-9]+$ ]] \
+  || die "run this from a direct VT shell, not ${current_tty:-a non-TTY session}; detach from tmux first"
+
+active_tty=$(< /sys/class/tty/tty0/active)
+[[ /dev/$active_tty == "$current_tty" ]] \
+  || die "$current_tty is not the active VT (the kernel reports $active_tty)"
+
+runtime_dir=/run/user/$(id -u)
+[[ -d $runtime_dir && -O $runtime_dir && -w $runtime_dir ]] \
+  || die "$runtime_dir must exist, be owned by this user, and be writable"
+export XDG_RUNTIME_DIR=$runtime_dir
+
+connected_output=
+for status_file in /sys/class/drm/card*-*/status; do
+  [[ -f $status_file ]] || continue
+  if grep -qx connected "$status_file"; then
+    connected_output=${status_file%/status}
+    connected_output=${connected_output##*/}
+    break
+  fi
+done
+[[ -n $connected_output ]] || die 'DRM reports no connected monitor'
+
+[[ -d /run/opengl-driver ]] \
+  || die 'NixOS hardware graphics are not active; set hardware.graphics.enable = true and rebuild first'
+[[ -d /run/opengl-driver/share/glvnd/egl_vendor.d ]] \
+  || die '/run/opengl-driver has no EGL vendor configuration'
+
+demo_root=${XDG_DATA_HOME:-$HOME/.local/share}/waylandcraft-demo
+
+WAYLANDCRAFT_DEMO_USERNAME=$(id -un)
+[[ $WAYLANDCRAFT_DEMO_USERNAME =~ ^[A-Za-z0-9_]{1,16}$ ]] \
+  || die "Linux username must be a 1-16 character Minecraft name: $WAYLANDCRAFT_DEMO_USERNAME"
+export WAYLANDCRAFT_DEMO_USERNAME
+WAYLANDCRAFT_DEMO_UUID=$(waylandcraft-offline-uuid "$WAYLANDCRAFT_DEMO_USERNAME")
+export WAYLANDCRAFT_DEMO_UUID
+
+waylandcraft-demo-prepare "$demo_root"
+
+cat <<EOF
+Starting the pinned Waylandcraft demo on $current_tty using $connected_output.
+
+This bypasses the installed desktop policy mod. In Minecraft:
+  1. Select an existing single-player world or create one.
+  2. Press B for Waylandcraft's window manager.
+  3. Press V for its application launcher.
+  4. The launcher lists desktop applications from your normal XDG data paths.
+  5. Select an entry and press Enter (highlighting alone does not launch it).
+  6. Exit Minecraft to return to this TTY.
+
+Demo data persists at: $demo_root
+Offline username: $WAYLANDCRAFT_DEMO_USERNAME
+Offline UUID: $WAYLANDCRAFT_DEMO_UUID
+EOF
+
+exec cage -s -d -- "$0" __client "$demo_root"

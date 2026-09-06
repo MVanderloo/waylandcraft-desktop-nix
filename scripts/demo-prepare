@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if (($# != 1)); then
+  printf '%s\n' 'Usage: waylandcraft-demo-prepare DEMO_ROOT' >&2
+  exit 2
+fi
+
+demo_root=$1
+mods_directory=$demo_root/game/mods
+mkdir -p "$demo_root/main" "$mods_directory" "$demo_root/game/saves" "$demo_root/bin"
+
+for directory in assets libraries versions; do
+  ln -sfn "$WAYLANDCRAFT_MC_HOME/$directory" "$demo_root/main/$directory"
+done
+
+# These filename families are owned by the demo. Replace old pinned versions
+# while leaving unrelated user-installed mods untouched.
+rm -f -- \
+  "$mods_directory"/waylandcraft-*.jar \
+  "$mods_directory"/fabric-api-*.jar \
+  "$mods_directory"/sodium-*.jar
+
+install -m 0644 "$WAYLANDCRAFT_JAR" \
+  "$mods_directory/waylandcraft-$WAYLANDCRAFT_VERSION.jar"
+install -m 0644 "$WAYLANDCRAFT_FABRIC_API_JAR" \
+  "$mods_directory/fabric-api-$WAYLANDCRAFT_FABRIC_API_VERSION.jar"
+install -m 0644 "$WAYLANDCRAFT_SODIUM_JAR" \
+  "$mods_directory/sodium-$WAYLANDCRAFT_SODIUM_VERSION.jar"
+
+if [[ ! -e $demo_root/game/options.txt ]]; then
+  install -m 0644 "$WAYLANDCRAFT_OPTIONS" "$demo_root/game/options.txt"
+fi
+mkdir -p "$demo_root/game/waylandcraft"
+if [[ ! -e $demo_root/game/waylandcraft/settings.json ]]; then
+  install -m 0644 "$WAYLANDCRAFT_SETTINGS" "$demo_root/game/waylandcraft/settings.json"
+fi
