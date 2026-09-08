@@ -62,6 +62,17 @@ let
     };
   };
 
+  existingSession =
+    (pkgs.writeTextDir "share/wayland-sessions/existing.desktop" ''
+      [Desktop Entry]
+      Name=Existing desktop
+      Exec=${pkgs.coreutils}/bin/true
+      Type=Application
+    '')
+    // {
+      providedSessions = [ "existing" ];
+    };
+
   testSystem = nixpkgsLib.nixosSystem {
     system = pkgs.stdenv.hostPlatform.system;
     modules = [
@@ -72,6 +83,11 @@ let
         fileSystems."/" = {
           device = "/dev/vda1";
           fsType = "ext4";
+        };
+        services.displayManager = {
+          enable = true;
+          defaultSession = "existing";
+          sessionPackages = [ existingSession ];
         };
         programs.waylandcraft-desktop = {
           enable = true;
@@ -105,6 +121,14 @@ let
           fsType = "ext4";
         };
       }
+    ];
+  };
+
+  disabledSystem = nixpkgsLib.nixosSystem {
+    system = pkgs.stdenv.hostPlatform.system;
+    modules = [
+      self.nixosModules.default
+      { system.stateVersion = "26.05"; }
     ];
   };
 
@@ -546,10 +570,25 @@ in
     assert self.inputs.nixpkgs.rev == packages.pins.nixpkgs.revision;
     assert lib.all (entry: entry.assertion) testSystem.config.assertions;
     assert exampleSystem.config.programs.waylandcraft-desktop.enable;
+    assert !exampleSystem.config.services.displayManager.enable;
+    assert exampleSystem.config.services.displayManager.defaultSession == null;
+    assert !exampleSystem.config.services.displayManager.autoLogin.enable;
+    assert exampleSystem.config.programs.waylandcraft-desktop.applications.terminal.package == null;
+    assert exampleSystem.config.programs.waylandcraft-desktop.extraPackages == [ ];
+    assert disabledSystem.config.services.displayManager.sessionPackages == [ ];
+    assert !(disabledSystem.config.systemd.user.services ? waylandcraft-minecraft);
+    assert
+      !(lib.any (
+        package: package.waylandcraftDesktopSession or false
+      ) disabledSystem.config.environment.systemPackages);
     assert !invalidKeybindingType.success;
     assert !invalidBuiltinType.success;
     assert !invalidPolicyActionKind.success;
     assert lib.elem sessionPackage testSystem.config.environment.systemPackages;
+    assert lib.elem sessionPackage testSystem.config.services.displayManager.sessionPackages;
+    assert lib.elem existingSession testSystem.config.services.displayManager.sessionPackages;
+    assert testSystem.config.services.displayManager.defaultSession == "existing";
+    assert lib.elem "waylandcraft" testSystem.config.services.displayManager.sessionData.sessionNames;
     assert lib.elem packages.diagnose testSystem.config.environment.systemPackages;
     assert !(lib.elem packages.runtimeTools testSystem.config.environment.systemPackages);
     assert testSystem.config.hardware.graphics.enable;
@@ -732,6 +771,32 @@ in
     outer=${sessionPackage}/bin/waylandcraft-desktop-session
     tty_launcher=${sessionPackage}/bin/waylandcraft
     control=${packages.sessionControl}/bin/waylandcraft-session-control
+    desktops=${testSystem.config.services.displayManager.sessionData.desktops}
+    desktop="$desktops/share/wayland-sessions/waylandcraft.desktop"
+    # DesktopNames is a display-manager extension, not an application-entry
+    # key recognized by desktop-file-validate. Check it separately.
+    grep -qx 'DesktopNames=Waylandcraft;' "$desktop"
+    sed '/^DesktopNames=/d' "$desktop" > waylandcraft.desktop
+    ${pkgs.desktop-file-utils}/bin/desktop-file-validate waylandcraft.desktop
+    test -f "$desktops/share/wayland-sessions/existing.desktop"
+    grep -qx 'Name=Waylandcraft' "$desktop"
+    greeter_launcher=$(sed -n 's/^Exec=//p' "$desktop")
+    test -x "$greeter_launcher"
+    test "$(readlink -f "$outer")" = "$(readlink -f "$greeter_launcher")"
+    grep -Fxq "TryExec=$greeter_launcher" "$desktop"
+
+    # A second greeter login must fail before touching the active runtime.
+    export XDG_RUNTIME_DIR="$TMPDIR/session-runtime"
+    mkdir -m700 "$XDG_RUNTIME_DIR"
+    exec 9>"$XDG_RUNTIME_DIR/waylandcraft-session.lock"
+    ${pkgs.util-linux}/bin/flock --nonblock 9
+    if "$greeter_launcher" 9>&- > duplicate-login.txt 2>&1; then
+      echo "a duplicate greeter session was accepted" >&2
+      exit 1
+    fi
+    grep -q 'already running for this user' duplicate-login.txt
+    exec 9>&-
+
     "$tty_launcher" --help > tty-launcher-help.txt
     grep -qx 'Usage: waylandcraft' tty-launcher-help.txt
     grep -q 'active local Linux VT' tty-launcher-help.txt

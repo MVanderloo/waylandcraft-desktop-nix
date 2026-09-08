@@ -9,7 +9,15 @@ waylandcraft-diagnose --logs
 Review the report before sharing it; it contains usernames, store paths, and
 recent journal content.
 
-## Missing or black session
+## Waylandcraft is missing from the greeter
+
+Check that the module is imported and `programs.waylandcraft-desktop.enable`
+is set, then rebuild and reboot into that generation. Your greeter must support
+Wayland sessions; see [greeter integration](flake.md#greeter-integration) for
+greetd or a custom session selector. The module adds an entry but does not
+enable a display manager or change its default session.
+
+## Black session or return to the greeter
 
 ```console
 systemctl status display-manager.service
@@ -18,7 +26,7 @@ systemctl --user show-environment | grep -E '^(DISPLAY|WAYLAND_DISPLAY)='
 journalctl --user -b -u waylandcraft-minecraft.service
 ```
 
-Rebuild after changing the flake input, then start a fresh VT login or reboot.
+Rebuild after changing the flake input, then start a fresh login or reboot.
 Both display variables must reach the user manager after Cage starts.
 
 After a five-start crash loop, end any remaining session and run:
@@ -43,11 +51,12 @@ mosh, tmux, and inactive VTs are rejected.
 
 ## Native or X11 clients fail
 
-From a configured terminal inside Waylandcraft, run:
+From a configured terminal inside Waylandcraft, run the optional probes from
+a checkout of the same flake revision:
 
 ```console
-waylandcraft-client-probe native
-waylandcraft-client-probe x11
+nix run .#client-tools -- native
+nix run .#client-tools -- x11
 ```
 
 Native failure points to `WAYLAND_DISPLAY`; X11-only failure points to
@@ -94,7 +103,7 @@ chords require an exact modifier set.
 
 ## Reporting a bug
 
-Reports are welcome but may not receive a response or fix. If filing one,
-include the locked revision, system closure, GPU and driver, launch path, probe
-results, and the first relevant journal error. State which items in the
-[manual hardware checklist](manual-testing.md) were run.
+Reports are welcome in [GitHub issues](https://github.com/mvanderloo/waylandcraft-desktop-nix/issues).
+Include the locked revision, system closure, GPU and driver, greeter or TTY
+launch path, probe results, and the first relevant journal error. State which
+items in the [manual hardware checklist](manual-testing.md) were run.

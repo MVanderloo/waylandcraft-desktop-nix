@@ -14,6 +14,7 @@ pkgs.testers.runNixOSTest (_: {
 
   nodes.machine =
     {
+      config,
       lib,
       pkgs,
       ...
@@ -103,6 +104,10 @@ pkgs.testers.runNixOSTest (_: {
         enable = true;
       };
 
+      # Assemble the same session directory a greeter consumes without
+      # starting a graphical display manager in this headless test.
+      services.displayManager.enable = true;
+
       # Exercise the module's real unit graph and policy without starting a
       # graphical JVM in the headless VM.
       systemd = {
@@ -134,7 +139,11 @@ pkgs.testers.runNixOSTest (_: {
             };
             serviceConfig = {
               Type = "simple";
-              ExecStart = "/run/current-system/sw/bin/waylandcraft-desktop-session";
+              ExecStart = pkgs.writeShellScript "waylandcraft-test-greeter-launch" ''
+                session_command="$(${pkgs.gnused}/bin/sed -n 's/^Exec=//p' \
+                  ${config.services.displayManager.sessionData.desktops}/share/wayland-sessions/waylandcraft.desktop)"
+                exec "$session_command"
+              '';
             };
           };
         };
@@ -198,6 +207,18 @@ pkgs.testers.runNixOSTest (_: {
     machine.succeed(f"readlink /proc/{cage_pid}/exe | grep -Fq '${pkgs.cage}/'")
     first_pid = main_pid()
     assert first_pid > 1
+
+    with subtest("a second greeter launch preserves the active session"):
+        status, output = machine.execute(
+            "runuser -u alice -- env "
+            + user_environment
+            + " /run/current-system/sw/bin/waylandcraft-desktop-session 2>&1"
+        )
+        assert status != 0, "a duplicate session was accepted"
+        assert "already running for this user" in output
+        assert main_pid() == first_pid
+        userctl("is-active --quiet waylandcraft-test-cage.service")
+        machine.succeed("test -d /run/user/1000/waylandcraft/game")
 
     with subtest("frontend does not inherit no-new-privileges"):
         machine.succeed(

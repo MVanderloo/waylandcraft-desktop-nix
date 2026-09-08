@@ -475,9 +475,27 @@ let
 
   outerSession = runtimePkgs.writeShellApplication {
     name = "waylandcraft-desktop-session";
-    runtimeInputs = [ packages.cage ];
+    runtimeInputs = [
+      packages.cage
+      runtimePkgs.util-linux
+    ];
     text = ''
       set -euo pipefail
+      runtime_directory="''${XDG_RUNTIME_DIR:-}"
+      if [[ $runtime_directory != /* || ! -d $runtime_directory || ! -O $runtime_directory || ! -w $runtime_directory ]]; then
+        printf '%s\n' 'Waylandcraft requires an absolute, owned, writable XDG_RUNTIME_DIR' >&2
+        exit 1
+      fi
+
+      # Greeters bypass the TTY launcher. Hold a shared lock before Cage or
+      # runtime preparation starts so either entry point rejects a second
+      # session, including concurrent login attempts.
+      exec 9>"$runtime_directory/waylandcraft-session.lock"
+      if ! flock --nonblock 9; then
+        printf '%s\n' 'A Waylandcraft session is already running for this user' >&2
+        exit 1
+      fi
+
       export XDG_SESSION_TYPE=wayland
       export XDG_CURRENT_DESKTOP=Waylandcraft
       export XDG_SESSION_DESKTOP=waylandcraft
@@ -539,15 +557,27 @@ let
     '';
   };
 
+  sessionDesktopEntry = runtimePkgs.writeText "waylandcraft.desktop" ''
+    [Desktop Entry]
+    Name=Waylandcraft
+    Comment=Wayland applications inside Minecraft
+    Exec=${outerSession}/bin/waylandcraft-desktop-session
+    TryExec=${outerSession}/bin/waylandcraft-desktop-session
+    Type=Application
+    DesktopNames=Waylandcraft;
+  '';
+
   sessionPackage =
     runtimePkgs.runCommand "waylandcraft-desktop-session"
       {
         passthru.waylandcraftDesktopSession = true;
+        passthru.providedSessions = [ "waylandcraft" ];
       }
       ''
         mkdir -p "$out/bin"
         ln -s ${ttyLauncher}/bin/waylandcraft "$out/bin/waylandcraft"
         ln -s ${outerSession}/bin/waylandcraft-desktop-session "$out/bin/waylandcraft-desktop-session"
+        install -Dm644 ${sessionDesktopEntry} "$out/share/wayland-sessions/waylandcraft.desktop"
       '';
 
 in
@@ -784,6 +814,8 @@ in
     ]
     ++ applicationPackages
     ++ cfg.extraPackages;
+
+    services.displayManager.sessionPackages = [ sessionPackage ];
 
     hardware.graphics = {
       # Both Cage/wlroots and Minecraft/LWJGL need the host's hardware driver

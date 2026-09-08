@@ -1,10 +1,10 @@
 # Manual hardware checklist
 
 Use this checklist after `just check-all`. The automated suite validates the
-NixOS module, generated launchers, policy mod, runtime preparation, headless
-Cage startup, systemd supervision, and offline dependency closure. It does not
-launch the real Minecraft client or prove DRM, GPU, monitor, physical-input, or
-embedded application behavior.
+NixOS module, registered session entry, generated launchers, policy mod, runtime
+preparation, headless Cage startup, systemd supervision, and offline dependency
+closure. It does not drive a real greeter, launch the real Minecraft client, or
+prove DRM, GPU, monitor, physical-input, or embedded application behavior.
 
 This is an optional testing aid, not a promise that the project maintainer runs
 every item or provides support for failures. Use the installed-session sections
@@ -15,8 +15,8 @@ packages. Mark optional checks as not applicable when the option is not enabled.
 
 - [ ] Git revision and NixOS system closure recorded.
 - [ ] GPU, driver, monitor connections, modes, and scaling recorded.
-- [ ] Launch path recorded: installed `waylandcraft`, local checkout demo, or
-      published flake demo.
+- [ ] Launch path recorded: greeter name and version, installed `waylandcraft`,
+      local checkout demo, or published flake demo.
 - [ ] Relevant module overrides recorded, including terminal, extra packages,
       keybindings, persistence paths, XKB options, and NVIDIA workaround.
 - [ ] Untested or failed items recorded with diagnostics and the first relevant
@@ -49,8 +49,13 @@ Run `just tty-smoke` from the active local Linux VT.
 
 ## Installed session startup
 
-From the active local VT, run `waylandcraft`.
+Rebuild, log out, and select **Waylandcraft** in the existing greeter's session
+chooser. Also exercise `waylandcraft` from an active local VT if using the
+direct launch path.
 
+- [ ] Waylandcraft appears alongside existing sessions; the host's default
+      session and autologin settings remain as configured.
+- [ ] Authentication launches Waylandcraft as the selected user.
 - [ ] Cage and Minecraft start without a black screen, crash loop, or unexpected
       delay.
 - [ ] Minecraft opens at its normal world menu and does not automatically create
@@ -65,6 +70,8 @@ From the active local VT, run `waylandcraft`.
       null, the login environment's XKB behavior is preserved.
 - [ ] On NVIDIA, the configured workaround behaves correctly; on other GPUs,
       no NVIDIA-specific override is unexpectedly applied.
+- [ ] Super+Shift+Q returns to the greeter, and a subsequent login works.
+- [ ] Logging into the usual desktop afterward works normally.
 
 ## Vanilla Minecraft behavior
 
@@ -99,11 +106,12 @@ Use a disposable single-player world for these checks.
 - [ ] If `extraPackages`, `extraMods`, or `extraGameFiles` are configured, each
       expected application, mod, or game file is present and functional.
 
-If the terminal role is configured, run these inside it:
+If the terminal role is configured, run these inside it from the checkout under
+test. The probe package is optional and is not installed by the module:
 
 ```console
-waylandcraft-client-probe native
-waylandcraft-client-probe x11
+nix run .#client-tools -- native
+nix run .#client-tools -- x11
 ```
 
 - [ ] Both probes render, accept the requested text, report `PASS`, and close.
@@ -124,8 +132,8 @@ capture. Exact modifier matching means extra modifiers must not trigger them.
 - [ ] A configured terminal shortcut opens the terminal role.
 - [ ] Keys and modifier combinations that are not configured continue to the
       focused guest normally.
-- [ ] Super+Shift+Q ends the session and returns to the invoking VT. Perform this
-      after the persistence checks below.
+- [ ] Super+Shift+Q ends the session and returns to the greeter or invoking VT.
+      Perform this after the persistence checks below.
 
 ## Persistence and configuration
 
@@ -156,7 +164,7 @@ systemctl --user show waylandcraft-minecraft.service -p MainPID -p NRestarts
       session remain active.
 - [ ] The saved world still opens after the restart.
 - [ ] Repeating the kill quickly until the five-start-per-minute limit is
-      exhausted ends Cage and returns the original VT instead of looping.
+      exhausted ends Cage and returns to the greeter or invoking VT.
 - [ ] After the crash-loop test, the session target is inactive and the runtime
       directory is gone.
 - [ ] Persistent saves and settings remain intact after the crash-loop test.
@@ -170,7 +178,8 @@ systemctl --user show waylandcraft-minecraft.service -p MainPID -p NRestarts
 
 Test only after the complete closure has been built successfully once.
 
-- [ ] Disconnect networking and start the installed session from the active VT.
+- [ ] Disconnect networking and start the installed session from the greeter
+      or active VT.
 - [ ] Minecraft reaches the normal menu without attempting a download or login.
 - [ ] A persistent single-player world opens and saves while offline.
 - [ ] End the session, restore networking, and confirm normal host connectivity.

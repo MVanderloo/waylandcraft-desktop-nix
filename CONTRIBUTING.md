@@ -3,17 +3,17 @@
 Thanks for helping improve Waylandcraft Desktop. Bug reports, hardware test
 results, documentation fixes, and focused code changes are welcome.
 
-This is a spare-time hobby project, not a support commitment. Opening an issue
-does not guarantee a response or fix. Important or simple issues may be handled
-when time and interest allow; larger changes are more likely to happen through
-contributor pull requests.
+This is a weekend hobby project. Opening an issue
+does not guarantee a response or fix, but reports are welcome and help others
+understand what works. Reviews and fixes happen as time and interest allow.
 
 ## Before opening an issue
 
-Search existing issues and run `waylandcraft-diagnose --logs` when the problem
-involves an installed session. Review the report before sharing it: it includes
-local usernames and Nix store paths. A useful report includes the NixOS system
-closure, GPU and driver, monitor, launch command and context, and exact
+Search [existing issues](https://github.com/mvanderloo/waylandcraft-desktop-nix/issues)
+and run `waylandcraft-diagnose --logs` when the problem involves an installed
+session. Review the report before sharing it: it includes local usernames and
+Nix store paths. A useful report includes the NixOS system
+closure, GPU and driver, monitor, greeter or TTY launch path, and exact
 reproduction steps.
 
 There is no dedicated private security-response process. GitHub issues are

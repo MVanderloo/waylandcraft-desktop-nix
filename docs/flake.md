@@ -1,6 +1,35 @@
 # Module and flake reference
 
-Import `nixosModules.default` (or the equivalent `nixosModules.waylandcraft-desktop`) and enable `programs.waylandcraft-desktop`. The module installs `waylandcraft` for launch from an active local VT.
+Import `nixosModules.default` (or the equivalent
+`nixosModules.waylandcraft-desktop`) and enable
+`programs.waylandcraft-desktop`. The module adds **Waylandcraft** to the host's
+Wayland sessions and installs `waylandcraft` for optional launch from an active
+local VT.
+
+## Greeter integration
+
+The module registers `waylandcraft.desktop` through
+`services.displayManager.sessionPackages`. Existing sessions, the selected
+default, autologin, and the choice of display manager remain under the host's
+control. The host must already provide a greeter that discovers Wayland
+sessions. Select **Waylandcraft** in its session chooser after rebuilding.
+
+The session identifier is `waylandcraft`. If you want it preselected, the host
+can explicitly set `services.displayManager.defaultSession = "waylandcraft"`.
+The module does not set this option itself.
+
+greetd does not discover sessions on its own: its greeter must do that. Point a
+custom session selector at the registered Wayland session directory, exposed
+by `config.services.displayManager.sessionData.desktops` when
+`services.displayManager.enable = true`. Alternatively, configure your existing
+greeter to launch `/run/current-system/sw/bin/waylandcraft-desktop-session`
+after authentication. Use this command for greeters; `waylandcraft` deliberately
+requires an interactive local VT.
+
+The session uses the logged-in user's systemd manager. Run only one graphical
+session at a time per user; a second Waylandcraft launch is rejected. Logout
+with Super+Shift+Q returns to the greeter, or to the invoking VT for a direct
+launch. Minecraft's Quit button restarts the frontend rather than logging out.
 
 ## Options
 
@@ -46,13 +75,14 @@ while a guest has keyboard capture.
 | Logout                                  | Super+Shift+Q                   |
 
 Policy shortcut names are arbitrary. Actions use a tagged built-in name or an
-argument vector executed directly, without shell parsing:
+argument vector executed directly, without shell parsing. In this example,
+`menuPackage` is the application package you want to launch:
 
 ```nix
 programs.waylandcraft-desktop = {
   policy = {
     shortcuts = {
-      lockCapture = {
+      keyboardLock = {
         key = "key.keyboard.g";
         modifiers = [ "super" ];
         action = { kind = "builtin"; name = "toggleKeyboardLock"; };
@@ -85,6 +115,14 @@ parsing.
 - `supervision-vm`: full supervision test, kept outside normal flake checks
   because of its larger build.
 
+`client-tools` is optional and is not installed by the module. Run it from this
+checkout with `nix run .#client-tools -- native` (or `-- x11`), or install the
+package separately to get `waylandcraft-client-probe` on your PATH.
+
+The runtime uses this flake's locked Nixpkgs input, independently of the host's
+package set. Keep that input pinned when using the documented configuration;
+making it follow the host's Nixpkgs changes the tested runtime versions.
+
 The internal package set permits only its pinned Minecraft and Sodium
 derivations despite their non-free licenses. It does not alter the consuming
 host's Nixpkgs policy.
@@ -103,4 +141,7 @@ Cage owns the outer session while systemd supervises Minecraft. Minecraft may
 restart without ending Cage; five starts within one minute end the session.
 PortableMC uses the pinned JDK and Fabric closure with no graphical launcher,
 online account database, or multiplayer. Once built, the session starts without
-network access, though applications inside it retain normal host networking.
+downloads or online authentication, though applications inside it retain normal
+host networking and permissions. The module does not configure a screen locker,
+desktop portals, audio services, or an application suite. It enables the host's
+graphics driver links by default; GPU driver selection stays with the host.

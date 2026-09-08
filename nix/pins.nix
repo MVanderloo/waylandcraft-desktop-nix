@@ -5,6 +5,12 @@
 
   minecraft = {
     version = "26.1.2";
+    # Mojang updates release metadata (including asset indexes) in place.
+    # Use the content-addressed manifest instead of resolving the version.
+    manifest = {
+      url = "https://piston-meta.mojang.com/v1/packages/6a52e36bc9bf022a2eddb907dc4e725d87f33e4f/26.1.2.json";
+      hash = "sha256-aO0So85yep6BkwG79XkrwnnC93KDQrCasiNbAY+CWg8=";
+    };
     fabricLoader = "0.19.2";
     fabricApi = "0.147.0+26.1.2";
     sodium = "0.8.12+mc26.1.2";
