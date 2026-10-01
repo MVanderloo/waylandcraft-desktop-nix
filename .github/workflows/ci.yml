@@ -21,9 +21,9 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
       - name: Check formatting
         run: git ls-files -z -co --exclude-standard '*.nix' | xargs -0 nix fmt -- --check
       - name: Check whitespace
@@ -37,8 +37,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
       - name: Build and run integration VM
         run: nix build .#supervision-vm --no-update-lock-file --print-build-logs
